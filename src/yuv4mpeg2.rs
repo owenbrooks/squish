@@ -1,4 +1,12 @@
 // Coding based on description here: https://wiki.multimedia.cx/index.php/YUV4MPEG2
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Decode error")]
+    DecodeError(String),
+
+    #[error(transparent)]
+    IOError(#[from] std::io::Error),
+}
 
 use std::{
     io::{BufRead, BufReader, Read},
@@ -15,16 +23,14 @@ pub struct Decoder<R: Read> {
 }
 
 impl<R: Read> Decoder<R> {
-    pub fn read_header(mut self) -> Reader<R> {
+    pub fn read_header(mut self) -> Result<Reader<R>, Error> {
         let mut header_buf = String::new();
-        self.source
-            .read_line(&mut header_buf)
-            .expect("Buffer not large enough to read header or header malformed.");
-        let header = Header::from_str(&header_buf).expect("Unable to parse header");
-        Reader {
+        self.source.read_line(&mut header_buf)?;
+        let header = Header::from_str(&header_buf)?;
+        Ok(Reader {
             header,
             source: self.source,
-        }
+        })
     }
 
     pub(crate) fn new(reader: R) -> Self {
@@ -41,8 +47,7 @@ impl<R: Read> Reader<R> {
             .read_line(&mut frame_buf)
             .expect("Unable to read line");
 
-        if frame_buf.len() == 0 {
-            // end of file
+        if frame_buf.is_empty() {
             // end of file
             None
         } else {
@@ -58,14 +63,14 @@ pub struct Header {
     pub height: usize,
     pub frame_rate_numerator: usize,
     pub frame_rate_denominator: usize,
-    pub interlace_mode: Option<InterlaceMode>,
-    pub pixel_aspect_ratio: Option<PixelAspectRatio>,
+    pub interlace_mode: InterlaceMode,
+    pub pixel_aspect_ratio: PixelAspectRatio,
     pub color_space: ColorSpace,
-    pub x_color_range: Option<XColorRange>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum InterlaceMode {
+    Unknown,
     Ip,
     It,
     Ib,
@@ -77,7 +82,8 @@ pub enum PixelAspectRatio {
     Unknown,
     Square,
     NtscSvcd,
-    NtscDvd,
+    NtscDvdNarrow,
+    NtscDvdWide,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -91,12 +97,6 @@ pub enum ColorSpace {
     C420mpeg2, // TODO: investigate
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum XColorRange {
-    Full,
-    Limited,
-}
-
 impl Default for Header {
     fn default() -> Self {
         Header {
@@ -104,10 +104,9 @@ impl Default for Header {
             height: 0,
             frame_rate_numerator: 0,
             frame_rate_denominator: 0,
-            interlace_mode: None,
-            pixel_aspect_ratio: None,
+            interlace_mode: InterlaceMode::Unknown,
+            pixel_aspect_ratio: PixelAspectRatio::Unknown,
             color_space: ColorSpace::C420,
-            x_color_range: None,
         }
     }
 }
@@ -128,26 +127,34 @@ impl Header {
 }
 
 impl FromStr for Header {
-    type Err = std::num::ParseIntError;
+    type Err = Error;
 
     // Parses a yuv4mpeg2 header of the form described at https://wiki.multimedia.cx/index.php/YUV4MPEG2
-    //  into an instance of 'Header'
-    fn from_str(header_string: &str) -> Result<Self, Self::Err> {
+    // into an instance of 'Header'
+    fn from_str(header_string: &str) -> Result<Self, Error> {
         let header_string = header_string.trim_end(); // removes trailing newline character
-        let parameter_strings = header_string.split(" ");
+        let mut parameter_strings = header_string.split(' ');
 
         let mut header = Header::default();
 
-        // TODO: check if first "param" is YUV4MPEG2
+        // Check if first word is YUV4MPEG2
+        let first_token = parameter_strings.next().ok_or(Error::DecodeError(
+            "Doesn't appear to be a YUV4MPEG2 file".to_string(),
+        ))?;
+        if first_token.to_lowercase() != "yuv4mpeg2" {
+            return Err(Error::DecodeError(
+                "Doesn't appear to be a YUV4MPEG2 file".to_string(),
+            ));
+        }
+
         for parameter_string in parameter_strings {
             match parameter_string.chars().nth(0) {
                 Some(first_char) => {
                     match first_char {
-                        'Y' => {} // nothing
                         'W' => {
-                            let width = parameter_string[1..]
-                                .parse::<usize>()
-                                .expect("Unable to parse width");
+                            let width = parameter_string[1..].parse::<usize>().map_err(|_| {
+                                Error::DecodeError("Unable to parse width".to_string())
+                            })?;
                             header.width = width;
                         }
                         'H' => {
@@ -157,36 +164,48 @@ impl FromStr for Header {
                             header.height = height;
                         }
                         'F' => {
-                            parameter_string.split_once(":");
+                            parameter_string.split_once(':');
                             let (numerator, denominator) = parameter_string[1..]
-                                .split_once(":")
+                                .split_once(':')
                                 .expect("Unable to parse frame rate");
                             header.frame_rate_numerator = numerator.parse().unwrap();
                             header.frame_rate_denominator = denominator.parse().unwrap();
                         }
-                        'I' => {} // TODO
-                        'A' => {} // TODO
-                        'C' => {
-                            match parameter_string {
-                                "C420jpeg" => header.color_space = ColorSpace::C420jpeg,
-                                "C420paldv" => header.color_space = ColorSpace::C420paldv,
-                                "C420" => header.color_space = ColorSpace::C420,
-                                "C422" => header.color_space = ColorSpace::C422,
-                                "C444" => header.color_space = ColorSpace::C444,
-                                "Cmono" => header.color_space = ColorSpace::Cmono,
-                                "C420mpeg2" => header.color_space = ColorSpace::C420mpeg2,
-                                _ => {
-                                    dbg!(parameter_string);
-                                    panic!("Color space invalid")
-                                } // invalid
+                        'I' => match parameter_string {
+                            "Ip" => header.interlace_mode = InterlaceMode::Ip,
+                            "It" => header.interlace_mode = InterlaceMode::It,
+                            "Ib" => header.interlace_mode = InterlaceMode::Ib,
+                            "Im" => header.interlace_mode = InterlaceMode::Im,
+                            _ => {
+                                return Err(Error::DecodeError("Unknown interlace mode provided".to_string()));
                             }
-                        } // TODO
+                        }
+                        'A' => match parameter_string {
+                            "A0:0" => header.pixel_aspect_ratio = PixelAspectRatio::Unknown,
+                            "A1:1" => header.pixel_aspect_ratio = PixelAspectRatio::Square,
+                            "A4:3" => header.pixel_aspect_ratio = PixelAspectRatio::NtscSvcd,
+                            "A4:5" => header.pixel_aspect_ratio = PixelAspectRatio::NtscDvdNarrow,
+                            "A32:27" => header.pixel_aspect_ratio = PixelAspectRatio::NtscDvdWide,
+                            _ => header.pixel_aspect_ratio = PixelAspectRatio::Unknown,
+                        }
+                        'C' => match parameter_string {
+                            "C420jpeg" => header.color_space = ColorSpace::C420jpeg,
+                            "C420paldv" => header.color_space = ColorSpace::C420paldv,
+                            "C420" => header.color_space = ColorSpace::C420,
+                            "C422" => header.color_space = ColorSpace::C422,
+                            "C444" => header.color_space = ColorSpace::C444,
+                            "Cmono" => header.color_space = ColorSpace::Cmono,
+                            "C420mpeg2" => header.color_space = ColorSpace::C420mpeg2,
+                            _ => {
+                                return Err(Error::DecodeError("Color space invalid".to_string()));
+                            }
+                        }
                         'X' => {} // ignore comments
-                        _ => {}   // invalid
+                        _ => {}   // unknown, ignore
                     }
                 }
                 None => {
-                    // error
+                    return Err(Error::DecodeError("Empty token received".to_string()));
                 }
             }
         }

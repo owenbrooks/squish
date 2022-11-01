@@ -2,9 +2,11 @@ use std::{
     env, fs,
     io::{self, BufRead, BufReader},
 };
+
+use anyhow::Context;
 mod yuv4mpeg2;
 
-fn main() {
+fn main() -> Result<(), anyhow::Error>{
     // Accept input either from stdin, or a filepath as first argument
     let input = env::args().nth(1);
     let mut reader: Box<dyn BufRead> = match input {
@@ -13,21 +15,16 @@ fn main() {
     };
 
     let decoder = yuv4mpeg2::Decoder::new(&mut reader);
-    let mut reader = decoder.read_header();
+    let mut reader = decoder.read_header().context("Unable to read header")?;
 
     let mut frame_buf = vec![0; reader.header.frame_bytes_length()];
 
-    // Read through all frames
     let mut frame_count = 0;
-    loop {
-        match reader.next_frame(&mut frame_buf) {
-            Some(_) => {
-                frame_count += 1;
-            }
-            None => {
-                break;
-            }
-        }
+    // Read through all frames
+    while reader.next_frame(&mut frame_buf).is_some() {
+        frame_count += 1;
     }
     dbg!(frame_count);
+
+    Ok(())
 }
