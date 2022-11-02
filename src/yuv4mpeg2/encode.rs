@@ -1,8 +1,6 @@
-use std::{
-    io::{BufWriter, Write},
-};
+use std::io::{BufWriter, Write};
 
-use super::{Error, Frame, Header};
+use super::{ColorSpace, Error, Frame, Header, InterlaceMode, PixelAspectRatio};
 
 pub struct Writer<W: Write> {
     pub header: Header,
@@ -33,12 +31,10 @@ impl<W: Write> Encoder<W> {
 impl<W: Write> Writer<W> {
     pub fn write_frame(&mut self, frame: Frame) -> Result<(), Error> {
         let frame_marker_string = "FRAME\n";
-        self.sink
-            .write(frame_marker_string.as_bytes())?;
+        self.sink.write(frame_marker_string.as_bytes())?;
 
         let buf = frame.to_vec();
-        self.sink
-            .write(&buf)?;
+        self.sink.write(&buf)?;
         Ok(())
     }
 }
@@ -60,5 +56,43 @@ impl ToString for Header {
         );
 
         header_string
+    }
+}
+
+impl std::fmt::Display for InterlaceMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            InterlaceMode::Unknown => write!(f, "I?"),
+            InterlaceMode::Ip => write!(f, "Ip"),
+            InterlaceMode::It => write!(f, "It"),
+            InterlaceMode::Ib => write!(f, "Ib"),
+            InterlaceMode::Im => write!(f, "Im"),
+        }
+    }
+}
+
+impl std::fmt::Display for PixelAspectRatio {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            PixelAspectRatio::Unknown => write!(f, "A0:0"),
+            PixelAspectRatio::Square => write!(f, "A1:1"),
+            PixelAspectRatio::NtscSvcd => write!(f, "A4:3"),
+            PixelAspectRatio::NtscDvdNarrow => write!(f, "A4:5"),
+            PixelAspectRatio::NtscDvdWide => write!(f, "A32:27"),
+        }
+    }
+}
+
+impl std::fmt::Display for ColorSpace {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ColorSpace::C420jpeg => write!(f, "C420jpeg"),
+            ColorSpace::C420paldv => write!(f, "C420paldv"),
+            ColorSpace::C420 => write!(f, "C420"),
+            ColorSpace::C422 => write!(f, "C422"),
+            ColorSpace::C444 => write!(f, "C444"),
+            ColorSpace::Cmono => write!(f, "Cmono"),
+            ColorSpace::C420mpeg2 => write!(f, "C420mpeg2"),
+        }
     }
 }

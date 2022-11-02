@@ -36,16 +36,14 @@ impl<R: Read> Reader<R> {
     // todo: make this an iterator
     pub fn next_frame(&mut self) -> Result<Option<Frame>, Error> {
         let mut frame_buf = String::new();
-        self.source
-            .read_line(&mut frame_buf)?;
+        self.source.read_line(&mut frame_buf)?;
 
         if frame_buf.is_empty() {
             // end of file
             Ok(None)
         } else {
             let mut buf = vec![0; self.header.frame_bytes_length()];
-            self.source
-                .read_exact(&mut buf)?;
+            self.source.read_exact(&mut buf)?;
             let frame = Frame::from_buf(
                 &buf,
                 self.header.width,

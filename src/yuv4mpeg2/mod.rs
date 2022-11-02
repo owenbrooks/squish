@@ -16,10 +16,9 @@ fn chroma_len_from_space(color_space: ColorSpace, width: usize, height: usize) -
     match color_space {
         ColorSpace::C444 => height * width,
         ColorSpace::C422 => height * width / 2,
-        ColorSpace::C420
-        | ColorSpace::C420jpeg
-        | ColorSpace::C420mpeg2
-        | ColorSpace::C420paldv => height * width / 4,
+        ColorSpace::C420 | ColorSpace::C420jpeg | ColorSpace::C420mpeg2 | ColorSpace::C420paldv => {
+            height * width / 4
+        }
         ColorSpace::Cmono => height * width, // TODO: check definition of Cmono
     }
 }
@@ -32,8 +31,8 @@ impl Frame {
         let chroma_len = chroma_len_from_space(color_space, width, height);
 
         let data_y = buf[..y_len].to_vec();
-        let data_cb = buf[y_len..y_len+chroma_len].to_vec();
-        let data_cr = buf[y_len+chroma_len..y_len+2*chroma_len].to_vec();
+        let data_cb = buf[y_len..y_len + chroma_len].to_vec();
+        let data_cr = buf[y_len + chroma_len..y_len + 2 * chroma_len].to_vec();
 
         Frame {
             width,
@@ -46,15 +45,17 @@ impl Frame {
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
-        [self.data_y.clone(), self.data_cb.clone(), self.data_cr.clone()].concat()
+        [
+            self.data_y.clone(),
+            self.data_cb.clone(),
+            self.data_cr.clone(),
+        ]
+        .concat()
     }
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("Decode error")]
-    DecodeError(String),
-
     #[error("Unable to parse header")]
     DecodeHeader,
     #[error("Unable to parse dimensions")]
@@ -65,7 +66,7 @@ pub enum Error {
     DecodeFrameRate,
     #[error("Unable to parse interlace mode")]
     DecodeInterlaceMode,
-    
+
     #[error(transparent)]
     IOError(#[from] std::io::Error),
 }
@@ -89,17 +90,6 @@ pub enum InterlaceMode {
     Ib,
     Im,
 }
-impl std::fmt::Display for InterlaceMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            InterlaceMode::Unknown => write!(f, "I?"),
-            InterlaceMode::Ip => write!(f, "Ip"),
-            InterlaceMode::It => write!(f, "It"),
-            InterlaceMode::Ib => write!(f, "Ib"),
-            InterlaceMode::Im => write!(f, "Im"),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 pub enum PixelAspectRatio {
@@ -108,17 +98,6 @@ pub enum PixelAspectRatio {
     NtscSvcd,
     NtscDvdNarrow,
     NtscDvdWide,
-}
-impl std::fmt::Display for PixelAspectRatio {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            PixelAspectRatio::Unknown => write!(f, "A0:0"),
-            PixelAspectRatio::Square => write!(f, "A1:1"),
-            PixelAspectRatio::NtscSvcd => write!(f, "A4:3"),
-            PixelAspectRatio::NtscDvdNarrow => write!(f, "A4:5"),
-            PixelAspectRatio::NtscDvdWide => write!(f, "A32:27"),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -130,19 +109,6 @@ pub enum ColorSpace {
     C444,      // 4:4:4
     Cmono,     // YCbCr plane only
     C420mpeg2, // TODO: investigate
-}
-impl std::fmt::Display for ColorSpace {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            ColorSpace::C420jpeg => write!(f, "C420jpeg"),
-            ColorSpace::C420paldv => write!(f, "C420paldv"),
-            ColorSpace::C420 => write!(f, "C420"),
-            ColorSpace::C422 => write!(f, "C422"),
-            ColorSpace::C444 => write!(f, "C444"),
-            ColorSpace::Cmono => write!(f, "Cmono"),
-            ColorSpace::C420mpeg2 => write!(f, "C420mpeg2"),
-        }
-    }
 }
 
 impl Default for Header {
