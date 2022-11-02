@@ -4,6 +4,8 @@ use std::{
 };
 
 use anyhow::Context;
+
+use crate::dct_2d::quantise_frame;
 mod dct_2d;
 mod yuv4mpeg2;
 
@@ -37,12 +39,16 @@ fn main() -> Result<(), anyhow::Error> {
     // Read through all frames and write them out to a new file
     let mut frame_count = 0;
     while let Some(frame) = reader.next_frame().context("Failed to read frame")? {
-        writer.write_frame(frame).context("Failed to write frame")?;
+        let new_frame = quantise_frame(frame);
+        // todo: figure out chroma height and widths
+        // let coeffs_cb = dct_2d::transform(&frame.data_cb, frame.height, frame.width);
+        // let coeffs_cr = dct_2d::transform(&frame.data_cr, frame.height, frame.width);
+        writer.write_frame(new_frame).context("Failed to write frame")?;
         frame_count += 1;
 
-        // if frame_count >= 10 {
-        //     break;
-        // }
+        if frame_count >= 10 {
+            break;
+        }
     }
     dbg!(frame_count);
 
