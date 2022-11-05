@@ -7,6 +7,7 @@ use anyhow::Context;
 
 use crate::dct_2d::quantise_frame;
 mod dct_2d;
+mod dct_1d;
 mod yuv4mpeg2;
 
 fn main() -> Result<(), anyhow::Error> {
@@ -46,9 +47,9 @@ fn main() -> Result<(), anyhow::Error> {
         writer.write_frame(new_frame).context("Failed to write frame")?;
         frame_count += 1;
 
-        if frame_count >= 10 {
-            break;
-        }
+        // if frame_count >= 20 {
+        //     break;
+        // }
     }
     dbg!(frame_count);
 

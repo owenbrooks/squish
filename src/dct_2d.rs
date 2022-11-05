@@ -1,3 +1,4 @@
+use crate::dct_1d::{self, my_transform};
 use crate::yuv4mpeg2::Frame;
 
 type MacroBlock = [[u8; 8]; 8];
@@ -14,8 +15,10 @@ pub fn quantise_frame(frame: Frame) -> Frame {
         width: frame.width,
         height: frame.height,
         data_y,
-        data_cb: frame.data_cb,
-        data_cr: frame.data_cr,
+        // data_cb: frame.data_cb,
+        // data_cr: frame.data_cr,
+        data_cb: vec![0; frame.chroma_len()],
+        data_cr: vec![0; frame.chroma_len()],
         color_space: frame.color_space,
     };
 
@@ -25,22 +28,23 @@ pub fn quantise_frame(frame: Frame) -> Frame {
 // Joins macroblocks back into a single frame
 // Removes zero-padding to the right and bottom
 fn concatenate(blocks: Vec<MacroBlock>, height: usize, width: usize) -> Vec<u8> {
-    let mut values = vec![0; height*width];
+    let mut values = vec![0; height * width];
 
     let block_count_y = (height as f32 / 8.).ceil() as usize;
     let block_count_x = (width as f32 / 8.).ceil() as usize;
 
     for j in 0..block_count_y {
         for i in 0..block_count_x {
-            let block = blocks[j*block_count_x + i];
+            let block = blocks[j * block_count_x + i];
 
-            let start_x = i*8;
-            let start_y = j*8;
+            let start_x = i * 8;
+            let start_y = j * 8;
             let end_x = usize::min(start_x + 8, width);
             let end_y = usize::min(start_y + 8, height);
 
             for row in start_y..end_y {
-                values[row*width+start_x..row*width+end_x].copy_from_slice(&block[row-start_y][0..end_x-start_x]);
+                values[row * width + start_x..row * width + end_x]
+                    .copy_from_slice(&block[row - start_y][0..end_x - start_x]);
             }
         }
     }
@@ -48,7 +52,7 @@ fn concatenate(blocks: Vec<MacroBlock>, height: usize, width: usize) -> Vec<u8> 
     values
 }
 
-fn quantise(block: MacroBlock) -> MacroBlock {
+fn quantise(block: [[f64; 8]; 8]) -> [[f64; 8]; 8] {
     // TODO: implement
     block
 }
@@ -59,24 +63,20 @@ fn divide(values: &[u8], height: usize, width: usize) -> Vec<MacroBlock> {
     let block_count_y = (height as f32 / 8.).ceil() as usize;
     let block_count_x = (width as f32 / 8.).ceil() as usize;
 
-    let mut blocks = Vec::with_capacity(block_count_y*block_count_x);
+    let mut blocks = Vec::with_capacity(block_count_y * block_count_x);
 
     for j in 0..block_count_y {
         for i in 0..block_count_x {
             let mut block = [[0; 8]; 8];
 
-            let start_x = i*8;
-            let start_y = j*8;
+            let start_x = i * 8;
+            let start_y = j * 8;
             let end_x = usize::min(start_x + 8, width);
             let end_y = usize::min(start_y + 8, height);
 
             for row in start_y..end_y {
-                block[row-start_y][0..end_x-start_x].copy_from_slice(&values[row*width+start_x..row*width+end_x]);
-
-                // TODO: remove
-                // for col in start_x..end_x {
-                //     block[row-start_y][col-start_x] = values[row*width+col];
-                // }
+                block[row - start_y][0..end_x - start_x]
+                    .copy_from_slice(&values[row * width + start_x..row * width + end_x]);
             }
             blocks.push(block);
         }
@@ -86,10 +86,10 @@ fn divide(values: &[u8], height: usize, width: usize) -> Vec<MacroBlock> {
 }
 
 #[test]
-fn divides_into_macroblocks() {
+fn does_divide_into_macroblocks() {
     const HEIGHT: usize = 23;
     const WIDTH: usize = 31;
-    let data_y = [1; HEIGHT*WIDTH];
+    let data_y = [1; HEIGHT * WIDTH];
 
     let blocks = divide(&data_y, HEIGHT, WIDTH);
     assert_eq!(blocks.len(), 12); // check number of blocks
@@ -97,64 +97,92 @@ fn divides_into_macroblocks() {
     assert_eq!(blocks[11][7][7], 0); // check 0 padding
 }
 
-// Performs transform as shown at https://en.wikipedia.org/wiki/Discrete_cosine_transform#M-D_DCT-II
-fn transform(block: MacroBlock) -> MacroBlock {
-    let mut coefficients = [[0; 8]; 8];
-    let height = 8;
-    let width = 8;
+// shifts block values from 0,255 to -128,127
+fn shift_and_normalise(block: MacroBlock) -> [[f64; 8]; 8] {
+    let mut new_block = [[0.; 8]; 8];
 
-    for k1 in 0..height {
-        for k2 in 0..width {
-            let mut sum = 0.0;
-            for n1 in 0..height {
-                for n2 in 0..width {
-                    let value = block[n1][n2] as f32;
-                    let row_wise = (std::f32::consts::PI * (n1 as f32 + 0.5) * (k1 as f32)
-                        / (height as f32))
-                        .cos();
-                    let col_wise = (std::f32::consts::PI * (n2 as f32 + 0.5) * (k2 as f32)
-                        / (width as f32))
-                        .cos();
-                    sum += value * row_wise * col_wise;
-                }
-            }
-
-            coefficients[k1][k2] = sum as u8;
+    for i in 0..8 {
+        for j in 0..8 {
+            new_block[i][j] = (block[i][j] as i16 - 128) as f64;
         }
     }
-
-    coefficients
+    new_block
 }
 
-fn inverse_transform(coefficients: MacroBlock) -> MacroBlock {
-    let mut block = [[0; 8]; 8];
-    let height = 8;
-    let width = 8;
+// maps values from -128,127 to 0,255
+fn unshift_and_denormalise(block: [[f64; 8]; 8]) -> MacroBlock {
+    let mut new_block = [[0; 8]; 8];
 
-    for k1 in 0..height {
-        for k2 in 0..width {
-            let mut sum = 0.0;
-            for n1 in 0..height {
-                for n2 in 0..width {
-                    if n1 == 0 && n2 == 0 {
-                        // skip for DC term
-                        continue;
-                    }
-                    let value = coefficients[n1][n2] as f32;
-                    let row_wise = (std::f32::consts::PI * (k1 as f32 + 0.5) * (n1 as f32)
-                        / (height as f32))
-                        .cos();
-                    let col_wise = (std::f32::consts::PI * (k2 as f32 + 0.5) * (n2 as f32)
-                        / (width as f32))
-                        .cos();
-                    sum += value * row_wise * col_wise;
-                }
-            }
+    for i in 0..8 {
+        for j in 0..8 {
+            // clamps to valid u8 (between 0 and 255)
+            new_block[i][j] = ((block[i][j] as i16) + 128).max(0).min(255) as u8;
+        }
+    }
+    new_block
+}
 
-            let dc_term = coefficients[0][0] as f32;
-            block[k1][k2] = (sum + 1. / (2. * dc_term)) as u8;
+// Performs transform as shown at https://en.wikipedia.org/wiki/Discrete_cosine_transform#M-D_DCT-II
+fn transform(block: MacroBlock) -> [[f64; 8]; 8] {
+    // Perform DCT along rows
+    let mut shifted_block = shift_and_normalise(block);
+    for k1 in 0..8 {
+        dct_1d::transform(&mut shifted_block[k1]);
+    }
+    // Perform DCT along columns
+    for i in 0..8 {
+        let mut column = [0.; 8];
+        for j in 0..8 {
+            column[j] = shifted_block[j][i];
+        }
+
+        dct_1d::transform(&mut column);
+
+        for j in 0..8 {
+            shifted_block[j][i] = column[j];
+        }
+    }
+    shifted_block
+}
+fn inverse_transform(coefficients: [[f64; 8]; 8]) -> MacroBlock {
+    let mut intermediate_coeffs = coefficients.clone();
+
+    // Perform DCT along rows
+    for k1 in 0..8 {
+        dct_1d::inverse_transform(&mut intermediate_coeffs[k1]);
+    }
+    // Perform DCT along columns
+    for i in 0..8 {
+        let mut column = [0.; 8];
+        for j in 0..8 {
+            column[j] = intermediate_coeffs[j][i];
+        }
+        dct_1d::inverse_transform(&mut column);
+
+        for j in 0..8 {
+            intermediate_coeffs[j][i] = column[j];
         }
     }
 
+    let block = unshift_and_denormalise(intermediate_coeffs);
     block
+}
+
+#[test]
+fn transforms_correctly() {
+    let test_block: MacroBlock = [
+        [52, 55, 61, 66, 70, 61, 64, 73],
+        [63, 59, 55, 90, 109, 85, 69, 72],
+        [62, 59, 68, 113, 144, 104, 66, 73],
+        [63, 58, 71, 122, 154, 106, 70, 69],
+        [67, 61, 68, 104, 126, 88, 68, 70],
+        [79, 65, 60, 70, 77, 68, 58, 75],
+        [85, 71, 64, 59, 55, 61, 65, 83],
+        [87, 79, 69, 68, 65, 76, 78, 94],
+    ];
+    let transformed = transform(test_block);
+    dbg!(transformed);
+    let inv = inverse_transform(transformed);
+    dbg!(inv);
+    assert_eq!(inv[0][0], test_block[0][0]);
 }
