@@ -157,6 +157,7 @@ fn inverse_transform(coefficients: [[f64; 8]; 8]) -> MacroBlock {
         for j in 0..8 {
             column[j] = intermediate_coeffs[j][i];
         }
+        
         dct_1d::inverse_transform(&mut column);
 
         for j in 0..8 {
