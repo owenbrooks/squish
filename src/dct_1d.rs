@@ -23,46 +23,14 @@
 
 use std;
 
-pub fn my_transform(vector: &mut [f64; 8]) {
-    // implements https://unix4lyfe.org/dct-1d/
-    let mut temp_vec = [0.; 8];
-    let N = 8;
-    for k in 0..8 {
-        let mut sum = 0.0;
-        let scale = if k == 0 { 0.5_f64.sqrt() } else { 1.0 };
-        for n in 0..8 {
-            sum += vector[n]
-                * scale
-                * ((n as f64 + 0.5) * (k as f64) * std::f64::consts::PI / (N as f64)).cos();
-        }
-        temp_vec[k] = (2. / (N as f64)).sqrt() * sum;
-    }
-    vector.copy_from_slice(&temp_vec);
-}
-
-pub fn my_inv_transform(vector: &mut [f64; 8]) {
-    let mut temp_vec = [0.; 8];
-    let N = 8;
-    for n in 0..8 {
-        let mut sum = 0.0;
-        for k in 0..8 {
-            let scale = if k == 0 { 0.5_f64.sqrt() } else { 1.0 };
-            sum += scale
-                * vector[k]
-                * ((n as f64 + 0.5) * (k as f64) * std::f64::consts::PI / (N as f64)).cos();
-        }
-        temp_vec[n] = (2. / (N as f64)).sqrt() * sum;
-    }
-    vector.copy_from_slice(&temp_vec);
-}
 #[test]
 fn transforms_correctly() {
     let test_vec_orig: [f64; 8] = [52., 55., 61., 66., 70., 61., 64., 73.];
     let mut test_vec = [52., 55., 61., 66., 70., 61., 64., 73.];
 
-    my_transform(&mut test_vec);
+    transform(&mut test_vec);
     dbg!(test_vec);
-    my_inv_transform(&mut test_vec);
+    inverse_transform(&mut test_vec);
     dbg!(test_vec);
 
     assert_eq!(test_vec_orig[0].round(), test_vec[0].round()); // actually just need nearly equal
