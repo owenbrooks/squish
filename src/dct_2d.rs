@@ -8,17 +8,20 @@ pub fn quantise_frame(frame: Frame) -> Frame {
     let blocks_y = divide(&frame.data_y, frame.height, frame.width);
     let coeffs_y = blocks_y.iter().map(|block| transform(*block));
     let quantised_y = coeffs_y.map(|block| quantise(block));
-    let dequantised_y = quantised_y.map(|block| inverse_transform(block)).collect();
-    let data_y = concatenate(dequantised_y, frame.height, frame.width);
+    let dequantised_y = quantised_y.map(|block| dequantise(block));
+    let untransformed = dequantised_y
+        .map(|block| inverse_transform(block))
+        .collect();
+    let data_y = concatenate(untransformed, frame.height, frame.width);
 
     let new_frame = Frame {
         width: frame.width,
         height: frame.height,
         data_y,
-        // data_cb: frame.data_cb,
-        // data_cr: frame.data_cr,
-        data_cb: vec![0; frame.chroma_len()],
-        data_cr: vec![0; frame.chroma_len()],
+        data_cb: frame.data_cb,
+        data_cr: frame.data_cr,
+        // data_cb: vec![0; frame.chroma_len()],
+        // data_cr: vec![0; frame.chroma_len()],
         color_space: frame.color_space,
     };
 
@@ -52,9 +55,33 @@ fn concatenate(blocks: Vec<MacroBlock>, height: usize, width: usize) -> Vec<u8> 
     values
 }
 
+const QUANT_MATRIX_50: [[f64; 8]; 8] = [
+    [16., 11., 10., 16., 24., 40., 51., 61.],
+    [12., 12., 14., 19., 26., 58., 60., 55.],
+    [14., 13., 16., 24., 40., 57., 69., 56.],
+    [14., 17., 22., 29., 51., 87., 80., 62.],
+    [18., 22., 37., 56., 68., 109., 103., 77.],
+    [24., 35., 55., 64., 81., 104., 113., 92.],
+    [49., 64., 78., 87., 103., 121., 120., 101.],
+    [72., 92., 95., 98., 112., 100., 103., 99.],
+];
 fn quantise(block: [[f64; 8]; 8]) -> [[f64; 8]; 8] {
-    // TODO: implement
-    block
+    let mut output_block = block.clone();
+    for i in 0..8 {
+        for j in 0..8 {
+            output_block[j][i] = (output_block[j][i]/(QUANT_MATRIX_50[j][i]*5.)).round();
+        }
+    }
+    output_block
+}
+fn dequantise(block: [[f64; 8]; 8]) -> [[f64; 8]; 8] {
+    let mut output_block = block.clone();
+    for i in 0..8 {
+        for j in 0..8 {
+            output_block[j][i] = output_block[j][i]*QUANT_MATRIX_50[j][i]*5.;
+        }
+    }
+    output_block
 }
 
 // Splits image data into square macroblocks of size 8x8, adding zero-padding
@@ -183,7 +210,11 @@ fn transforms_correctly() {
     ];
     let transformed = transform(test_block);
     dbg!(transformed);
-    let inv = inverse_transform(transformed);
+    let quantised = quantise(transformed);
+    dbg!(quantised);
+    let dequantised = dequantise(quantised);
+    dbg!(dequantised);
+    let inv = inverse_transform(dequantised);
     dbg!(inv);
-    assert_eq!(inv[0][0], test_block[0][0]);
+    assert_eq!(inv[0][1], test_block[0][0]);
 }
