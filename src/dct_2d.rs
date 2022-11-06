@@ -4,11 +4,11 @@ use crate::yuv4mpeg2::Frame;
 type MacroBlock = [[u8; 8]; 8];
 
 // Quantises in 8x8 blocks
-pub fn quantise_frame(frame: Frame) -> Frame {
+pub fn quantise_frame(frame: Frame, quantisation_factor: f64) -> Frame {
     let blocks_y = divide(&frame.data_y, frame.height, frame.width);
     let coeffs_y = blocks_y.iter().map(|block| transform(*block));
-    let quantised_y = coeffs_y.map(|block| quantise(block));
-    let dequantised_y = quantised_y.map(|block| dequantise(block));
+    let quantised_y = coeffs_y.map(|block| quantise(block, quantisation_factor));
+    let dequantised_y = quantised_y.map(|block| dequantise(block, quantisation_factor));
     let untransformed = dequantised_y
         .map(|block| inverse_transform(block))
         .collect();
@@ -65,20 +65,20 @@ const QUANT_MATRIX_50: [[f64; 8]; 8] = [
     [49., 64., 78., 87., 103., 121., 120., 101.],
     [72., 92., 95., 98., 112., 100., 103., 99.],
 ];
-fn quantise(block: [[f64; 8]; 8]) -> [[f64; 8]; 8] {
+fn quantise(block: [[f64; 8]; 8], quantisation_factor: f64) -> [[f64; 8]; 8] {
     let mut output_block = block.clone();
     for i in 0..8 {
         for j in 0..8 {
-            output_block[j][i] = (output_block[j][i]/(QUANT_MATRIX_50[j][i]*5.)).round();
+            output_block[j][i] = (output_block[j][i]/(QUANT_MATRIX_50[j][i]*quantisation_factor)).round();
         }
     }
     output_block
 }
-fn dequantise(block: [[f64; 8]; 8]) -> [[f64; 8]; 8] {
+fn dequantise(block: [[f64; 8]; 8], quantisation_factor: f64) -> [[f64; 8]; 8] {
     let mut output_block = block.clone();
     for i in 0..8 {
         for j in 0..8 {
-            output_block[j][i] = output_block[j][i]*QUANT_MATRIX_50[j][i]*5.;
+            output_block[j][i] = output_block[j][i]*QUANT_MATRIX_50[j][i]*quantisation_factor;
         }
     }
     output_block
@@ -210,9 +210,9 @@ fn transforms_correctly() {
     ];
     let transformed = transform(test_block);
     dbg!(transformed);
-    let quantised = quantise(transformed);
+    let quantised = quantise(transformed, 1.);
     dbg!(quantised);
-    let dequantised = dequantise(quantised);
+    let dequantised = dequantise(quantised, 1.);
     dbg!(dequantised);
     let inv = inverse_transform(dequantised);
     dbg!(inv);
