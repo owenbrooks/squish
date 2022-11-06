@@ -5,7 +5,7 @@ use std::{
 
 use super::{ColorSpace, Error, Frame, Header, InterlaceMode, PixelAspectRatio};
 
-pub struct Reader<R: Read> {
+pub struct Y4MReader<R: Read> {
     pub header: Header,
     source: BufReader<R>,
 }
@@ -15,11 +15,11 @@ pub struct Decoder<R: Read> {
 }
 
 impl<R: Read> Decoder<R> {
-    pub fn read_header(mut self) -> Result<Reader<R>, Error> {
+    pub fn read_header(mut self) -> Result<Y4MReader<R>, Error> {
         let mut header_buf = String::new();
         self.source.read_line(&mut header_buf)?;
         let header = Header::from_str(&header_buf)?;
-        Ok(Reader {
+        Ok(Y4MReader {
             header,
             source: self.source,
         })
@@ -32,7 +32,36 @@ impl<R: Read> Decoder<R> {
     }
 }
 
-impl<R: Read> Reader<R> {
+pub struct FrameIterator<R: Read> {
+    reader: Y4MReader<R>,
+}
+
+impl<I: Read> Iterator for FrameIterator<I> {
+    type Item = Frame;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next_frame = self.reader.next_frame();
+        match next_frame {
+            Ok(frame) => frame,
+            Err(_) => None,
+        }
+    }
+}
+
+impl<R: Read> IntoIterator for Y4MReader<R> {
+    type Item = Frame;
+
+    type IntoIter = FrameIterator<R>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        FrameIterator {
+            reader: self,
+        }
+    }
+
+}
+
+impl<R: Read> Y4MReader<R> {
     // todo: make this an iterator
     pub fn next_frame(&mut self) -> Result<Option<Frame>, Error> {
         let mut frame_buf = String::new();

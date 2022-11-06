@@ -6,10 +6,12 @@ use std::{
 
 use anyhow::Context;
 use clap::Parser;
+use itertools::Itertools;
 
-use crate::dct_2d::quantise_frame;
+use crate::{dct_2d::quantise_frame, dct_3d::quantise_chunk};
 mod dct_1d;
 mod dct_2d;
+mod dct_3d;
 mod yuv4mpeg2;
 
 #[derive(Parser, Debug)]
@@ -26,6 +28,10 @@ struct Args {
     /// Quantisation factor (higher results in lower quality)
     #[arg(short, long, default_value_t = 1.)]
     quantisation_factor: f64,
+
+    /// Enable dct and transform across the time domain in chunks of 8 frames
+    #[arg(short, long, default_value_t = false)]
+    temporal_quantisation: bool,
 }
 
 fn main() -> Result<(), anyhow::Error> {
@@ -37,7 +43,7 @@ fn main() -> Result<(), anyhow::Error> {
     );
 
     let decoder = yuv4mpeg2::Decoder::new(&mut reader);
-    let mut reader = decoder.read_header().context("Failed to read header")?;
+    let reader = decoder.read_header().context("Failed to read header")?;
 
     // Output either to stdout, or a filepath as second argument if given
     let writer = BufWriter::new(
@@ -49,23 +55,37 @@ fn main() -> Result<(), anyhow::Error> {
         .write_header(&reader.header)
         .context("Failed to write header")?;
 
-    // Read through all frames and write them out to a new file
+    // Quantise all frames and write them out to a new file
     let mut frame_count = 0;
-    while let Some(frame) = reader.next_frame().context("Failed to read frame")? {
-        let new_frame = quantise_frame(frame, args.quantisation_factor);
-        // todo: figure out chroma height and widths
-        // let coeffs_cb = dct_2d::transform(&frame.data_cb, frame.height, frame.width);
-        // let coeffs_cr = dct_2d::transform(&frame.data_cr, frame.height, frame.width);
-        writer
-            .write_frame(new_frame)
-            .context("Failed to write frame")?;
-        frame_count += 1;
+    if args.temporal_quantisation {
+        for chunk in &reader.into_iter().chunks(8) {
+            let frames = chunk.collect_vec();
+            if frames.len() == 8 { // ignore smaller chunk at end since fast dct works on length 8 arrays
+                let quantised_chunk = quantise_chunk(frames, args.quantisation_factor);
+                for frame in quantised_chunk {
+                    writer.write_frame(frame).context("Failed to write frame")?;
+                    frame_count += 1;
+                    // if frame_count >= 20 {
+                    //     break;
+                    // }
+                }
+            }
+        }
+    } else {
+        for frame in reader {
+            let new_frame = quantise_frame(frame, args.quantisation_factor);
+            writer
+                .write_frame(new_frame)
+                .context("Failed to write frame")?;
+            frame_count += 1;
 
-        // if frame_count >= 20 {
-        //     break;
-        // }
+            // if frame_count >= 20 {
+            //     break;
+            // }
+        }
     }
-    dbg!(frame_count);
+
+    println!("Wrote {} frames", frame_count);
 
     Ok(())
 }

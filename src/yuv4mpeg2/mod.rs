@@ -4,6 +4,7 @@ mod encode;
 pub use decode::Decoder;
 pub use encode::Encoder;
 
+#[derive(Clone)]
 pub struct Frame {
     pub width: usize,
     pub height: usize,

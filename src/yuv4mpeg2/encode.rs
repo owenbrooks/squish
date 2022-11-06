@@ -2,7 +2,7 @@ use std::io::{BufWriter, Write};
 
 use super::{ColorSpace, Error, Frame, Header, InterlaceMode, PixelAspectRatio};
 
-pub struct Writer<W: Write> {
+pub struct Y4MWriter<W: Write> {
     pub header: Header,
     sink: BufWriter<W>,
 }
@@ -12,10 +12,10 @@ pub struct Encoder<W: Write> {
 }
 
 impl<W: Write> Encoder<W> {
-    pub fn write_header(mut self, header: &Header) -> Result<Writer<W>, Error> {
+    pub fn write_header(mut self, header: &Header) -> Result<Y4MWriter<W>, Error> {
         let header_string = header.to_string();
         self.sink.write(header_string.as_bytes())?;
-        Ok(Writer {
+        Ok(Y4MWriter {
             header: header.clone(),
             sink: self.sink,
         })
@@ -28,7 +28,7 @@ impl<W: Write> Encoder<W> {
     }
 }
 
-impl<W: Write> Writer<W> {
+impl<W: Write> Y4MWriter<W> {
     pub fn write_frame(&mut self, frame: Frame) -> Result<(), Error> {
         let frame_marker_string = "FRAME\n";
         self.sink.write(frame_marker_string.as_bytes())?;
