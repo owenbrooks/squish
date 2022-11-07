@@ -2,6 +2,7 @@
 name = "squish"
 version = "0.1.0"
 edition = "2021"
+description = "Demonstration of 2D and 3D (temporal) DCT and quantisation compression of videos"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
