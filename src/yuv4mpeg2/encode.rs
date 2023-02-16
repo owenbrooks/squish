@@ -21,7 +21,7 @@ impl<W: Write> Encoder<W> {
         })
     }
 
-    pub(crate) fn new(writer: W) -> Self {
+    pub fn new(writer: W) -> Self {
         Encoder {
             sink: BufWriter::new(writer),
         }

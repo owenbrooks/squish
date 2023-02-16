@@ -25,7 +25,7 @@ impl<R: Read> Decoder<R> {
         })
     }
 
-    pub(crate) fn new(reader: R) -> Self {
+    pub fn new(reader: R) -> Self {
         Decoder {
             source: BufReader::new(reader),
         }

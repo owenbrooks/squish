@@ -1,6 +1,6 @@
 // Coding based on description here: https://wiki.multimedia.cx/index.php/YUV4MPEG2
-mod decode;
-mod encode;
+pub mod decode;
+pub mod encode;
 pub use decode::Decoder;
 pub use encode::Encoder;
 
